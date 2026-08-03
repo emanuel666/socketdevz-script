@@ -21,7 +21,7 @@ case "$ID:$VERSION_ID" in
   *) SUPPORT_LEVEL="unsupported" ;;
 esac
 
-apt-get install figlet sqlite3 curl wget jq unzip -y > /dev/null 2>&1
+apt-get install figlet curl wget jq unzip -y > /dev/null 2>&1
 apt install lolcat -y > /dev/null 2>&1
 
 RED='\033[1;31m'
@@ -178,24 +178,7 @@ Serverkey='819d82813183e4be3ca1ad74387e47c0c993b81c601b2d1473a3f47731c404ae'
 Serverpub='7fbd1f8aa0abfe15a7903e837f78aba39cf61d36f183bd604daa2fe4ef3b7b59'
 
 UDP_PORT=":36712"
-_default_obfs='tfn'
-_default_password='tfn'
-
-echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}"
-echo -e "${WHITE}${BOLD}                 Configuración de TFN-UDP${NC}"
-echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}"
-echo ""
-if [ -t 0 ]; then
-  read -e -p "$(echo -e "  ${YELLOW}🛡  Obfuscation (obfs)${NC} ${WHITE}[${_default_obfs}]:${NC} ")" -i "${_default_obfs}" _input_obfs
-  OBFS="${_input_obfs:-${_default_obfs}}"
-  read -e -p "$(echo -e "  ${YELLOW}🔒 Contraseña de UDP${NC} ${WHITE}[${_default_password}]:${NC} ")" -i "${_default_password}" _input_pass
-  PASSWORD="${_input_pass:-${_default_password}}"
-else
-  OBFS="${OBFS:-${_default_obfs}}"
-  PASSWORD="${PASSWORD:-${_default_password}}"
-fi
-echo ""
-export OBFS PASSWORD
+OBFS="socket"
 
 clear
 sleep 1.5
@@ -203,6 +186,8 @@ Nginx_Port='85'
 Dns_1='1.1.1.1' 
 Dns_2='1.0.0.1'
 MyVPS_Time='Africa/Accra'
+My_Chat_ID='6857779956'
+My_Bot_Key='8710991931:AAEk7mdyVamfxX7mTvO3HE_stV_zwEjVxnY'
 
 # ==========================================
 # BOT DE ADMINISTRACIÓN POR TELEGRAM (KYZ)
@@ -338,13 +323,6 @@ create_ssh_user() {
     echo "$user:$pass" | chpasswd
     if [ "$limit" -gt 0 ]; then sed -i "/^$user /d" /etc/deekayvpn/ssh_limits.txt; echo "$user $limit" >> /etc/deekayvpn/ssh_limits.txt; fi
     
-    # UNIFICACIÓN: Sincronizar con TFN-UDP automáticamente
-    sqlite3 /etc/hysteria/udpusers.db "REPLACE INTO users (username, password) VALUES ('$user', '$pass');"
-    local fetch_users_json
-    fetch_users_json=$(sqlite3 /etc/hysteria/udpusers.db "SELECT username || ':' || password FROM users;" | jq -R -s -c 'split("\n") | map(select(length>0))')
-    jq --argjson arr "$fetch_users_json" '.auth.config = $arr' /etc/hysteria/config.json > /tmp/h.json && mv /tmp/h.json /etc/hysteria/config.json
-    systemctl restart hysteria-server
-    
     show_account_info "$chat" "$user" "$pass" "$days" "$limit"
     return 0
 }
@@ -354,14 +332,6 @@ delete_ssh_user() {
     if ! id "$user" &>/dev/null; then send_msg "$chat" "❌ El usuario $user no existe."; return; fi
     pkill -u "$user" 2>/dev/null; userdel -f "$user" 2>/dev/null
     sed -i "/^$user /d" /etc/deekayvpn/ssh_limits.txt
-    
-    # UNIFICACIÓN: Eliminar de TFN-UDP automáticamente
-    sqlite3 /etc/hysteria/udpusers.db "DELETE FROM users WHERE username='$user';"
-    local fetch_users_json
-    fetch_users_json=$(sqlite3 /etc/hysteria/udpusers.db "SELECT username || ':' || password FROM users;" | jq -R -s -c 'split("\n") | map(select(length>0))')
-    jq --argjson arr "$fetch_users_json" '.auth.config = $arr' /etc/hysteria/config.json > /tmp/h.json && mv /tmp/h.json /etc/hysteria/config.json
-    systemctl restart hysteria-server
-
     send_msg "$chat" "✅ Usuario SSH/UDP *$user* eliminado correctamente."
 }
 
@@ -611,7 +581,7 @@ handle_session() {
                 step4)
                     IFS='|' read -r _ _ user pass days <<< "$session"; local limit="$input"
                     if ! [[ "$limit" =~ ^[0-9]+$ ]]; then send_msg "$chat" "❌ Límite inválido."; return; fi
-                    clear_session "$chat"; create_ssh_user "$chat" "$user" "$pass" "$days" "$limit"; increment_admin_counter "$chat" ;;
+                    clear_session "$chat"; create_ssh_user "$chat" "$user" "$pass" "$days" "$limit"; increment_admin_counter "$chat"; fi ;;
             esac ;;
         delssh)
             case "$step" in step1) local user="$input"; clear_session "$chat"; delete_ssh_user "$chat" "$user" ;; esac ;;
@@ -1023,39 +993,12 @@ systemctl disable --now haproxy 2>/dev/null || true
 systemctl enable xray > /dev/null 2>&1
 systemctl restart xray > /dev/null 2>&1
 
-# USER EXPIRY CRONJOB FOR XRAY AND TFN-UDP
+# USER EXPIRY CRONJOB FOR XRAY
 cat <<'EOF_EXP' > /usr/local/bin/exp-check
 #!/bin/bash
 set -o pipefail
 umask 077
 now=$(date +%Y-%m-%d)
-
-# --- LIMPIEZA DE USUARIOS UDP EXPIRADOS/BORRADOS ---
-if [ -f /etc/hysteria/udpusers.db ]; then
-    udp_changed=0
-    mapfile -t udp_users < <(sqlite3 /etc/hysteria/udpusers.db "SELECT username FROM users WHERE username != 'default';")
-    for u in "${udp_users[@]}"; do
-        sys_exp=$(chage -l "$u" 2>/dev/null | awk -F": " '/Account expires/ {print $2}')
-        if [ -z "$sys_exp" ]; then
-            sqlite3 /etc/hysteria/udpusers.db "DELETE FROM users WHERE username='$u';"
-            udp_changed=1
-        elif [ "$sys_exp" != "never" ]; then
-            exp_sec=$(date -d "$sys_exp" +%s 2>/dev/null)
-            now_sec=$(date +%s)
-            if [ "$now_sec" -gt "$exp_sec" ]; then
-                sqlite3 /etc/hysteria/udpusers.db "DELETE FROM users WHERE username='$u';"
-                udp_changed=1
-            fi
-        fi
-    done
-    if [ "$udp_changed" = "1" ]; then
-        fetch_users_json=$(sqlite3 /etc/hysteria/udpusers.db "SELECT username || ':' || password FROM users;" | jq -R -s -c 'split("\n") | map(select(length>0))')
-        jq --argjson arr "$fetch_users_json" '.auth.config = $arr' /etc/hysteria/config.json > /tmp/h.json && mv /tmp/h.json /etc/hysteria/config.json
-        systemctl restart hysteria-server
-    fi
-fi
-
-# --- LIMPIEZA XRAY ---
 CONFIG="/etc/xray/config.json"
 [ -s "$CONFIG" ] || exit 0
 
@@ -1261,31 +1204,22 @@ END
 systemctl daemon-reload > /dev/null 2>&1; systemctl enable server-sldns > /dev/null 2>&1; systemctl restart server-sldns > /dev/null 2>&1
 
 # ==========================================
-# CONFIGURACIÓN TFN-UDP (Basada en install.txt)
+# CONFIGURACIÓN TFN-UDP (ESTILO ORIGINAL Y SOCKET)
 # ==========================================
 instalar_tfn_udp() {
     local DOMAIN_UDP="${DOMAIN}"
     local PROTOCOL="udp"
     local UDP_PORT=":36712"
     local CONFIG_DIR="/etc/hysteria"
-    local USER_DB="$CONFIG_DIR/udpusers.db"
     local CONFIG_FILE="$CONFIG_DIR/config.json"
     local EXECUTABLE_INSTALL_PATH="/usr/local/bin/hysteria"
     local SYSTEMD_SERVICES_DIR="/etc/systemd/system"
     local REPO_URL="https://github.com/apernet/hysteria"
 
-    echo "Configurando base de datos TFN-UDP..."
+    echo "Configurando entorno TFN-UDP puro con obfs socket..."
     mkdir -p "$CONFIG_DIR"
-    sqlite3 "$USER_DB" "CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT NOT NULL);"
     
-    # Crear usuario por defecto si no existe
-    user_exists=$(sqlite3 "$USER_DB" "SELECT username FROM users WHERE username='default';")
-    if [[ -z "$user_exists" ]]; then
-        sqlite3 "$USER_DB" "INSERT INTO users (username, password) VALUES ('default', '$PASSWORD');"
-    fi
-
-    # Generar config.json para TFN-UDP
-    fetch_users_json=$(sqlite3 "$USER_DB" "SELECT username || ':' || password FROM users;" | jq -R -s -c 'split("\n") | map(select(length>0))')
+    # Generar config.json nativo de TFN-UDP sin requerir auth compleja
     cat << EOF > "$CONFIG_FILE"
 {
   "server": "$DOMAIN_UDP",
@@ -1298,12 +1232,8 @@ instalar_tfn_udp() {
   "down": "100 Mbps",
   "down_mbps": 100,
   "disable_udp": false,
-  "insecure": false,
-  "obfs": "$OBFS",
-  "auth": {
- 	"mode": "passwords",
-    "config": $fetch_users_json
-  }
+  "insecure": true,
+  "obfs": "$OBFS"
 }
 EOF
 
@@ -1384,8 +1314,7 @@ vnstat -u -i "$IFACE" 2>/dev/null || true
 systemctl enable vnstat > /dev/null 2>&1
 systemctl restart vnstat > /dev/null 2>&1
 
-
-# MENU CREATION (Unificado SSH/UDP y Eliminado gestor ajeno)
+# MENU CREATION (Estética Nokasvip intacta)
 mkdir -p /usr/local/bin > /dev/null 2>&1
 sed -i '/# KYZTUNNEL_MENU_AUTOSTART_START/,/# KYZTUNNEL_MENU_AUTOSTART_END/d' ~/.bashrc 2>/dev/null || true
 cat >> ~/.bashrc <<'EOF_BASHRC_AUTOSTART'
@@ -1419,7 +1348,6 @@ SSH_LIMIT_DB="/etc/deekayvpn/ssh_limits.txt"
 mkdir -p /etc/deekayvpn 2>/dev/null || true
 touch "$SSH_LIMIT_DB" 2>/dev/null || true
 
-# Detecta si el certificado activo es real o autofirmado
 if [ -f /etc/xray/cert_type ] && grep -q "letsencrypt" /etc/xray/cert_type; then XRAY_INSECURE="0"
 else XRAY_INSECURE="1"; fi
 [ "$XRAY_INSECURE" = "1" ] && INSECURE_PARAM="&allowInsecure=1" || INSECURE_PARAM=""
@@ -1560,18 +1488,11 @@ create_user() {
   echo "$user:$pass" | chpasswd
   sed -i "/^$user /d" "$SSH_LIMIT_DB" 2>/dev/null
   if [ "$conn_limit" -gt 0 ]; then echo "$user $conn_limit" >> "$SSH_LIMIT_DB"; fi
-  
-  # UNIFICACIÓN TFN-UDP
-  sqlite3 /etc/hysteria/udpusers.db "REPLACE INTO users (username, password) VALUES ('$user', '$pass');"
-  local fetch_users_json
-  fetch_users_json=$(sqlite3 /etc/hysteria/udpusers.db "SELECT username || ':' || password FROM users;" | jq -R -s -c 'split("\n") | map(select(length>0))')
-  jq --argjson arr "$fetch_users_json" '.auth.config = $arr' /etc/hysteria/config.json > /tmp/h.json && mv /tmp/h.json /etc/hysteria/config.json
-  systemctl restart hysteria-server
 
   IP=$(curl -s ipv4.icanhazip.com)
   clear; echo -e "${GREEN}CUENTA CREADA EXITOSAMENTE${NC}"
   echo -e "  Dominio: $DOMAIN\n  IP: $IP\n  Usuario: $user\n  Pass: $pass\n  Expira: $(date -d "+$days days" +%Y-%m-%d)"
-  echo -e "  ${YELLOW}✔ Servicios Activados:${NC} SSH, WebSocket, SlowDNS, TFN-UDP (36712)"
+  echo -e "  ${YELLOW}✔ Servicios Activados:${NC} SSH, WebSocket, SlowDNS, TFN-UDP Libre (36712)"
   pause_return
 }
 
@@ -1582,14 +1503,6 @@ delete_user() {
     pkill -u "$SELECTED_USER" 2>/dev/null
     if userdel -r -f "$SELECTED_USER" 2>/dev/null || userdel -f "$SELECTED_USER" 2>/dev/null; then
         sed -i "/^$SELECTED_USER /d" "$SSH_LIMIT_DB" 2>/dev/null
-        
-        # UNIFICACIÓN TFN-UDP
-        sqlite3 /etc/hysteria/udpusers.db "DELETE FROM users WHERE username='$SELECTED_USER';"
-        local fetch_users_json
-        fetch_users_json=$(sqlite3 /etc/hysteria/udpusers.db "SELECT username || ':' || password FROM users;" | jq -R -s -c 'split("\n") | map(select(length>0))')
-        jq --argjson arr "$fetch_users_json" '.auth.config = $arr' /etc/hysteria/config.json > /tmp/h.json && mv /tmp/h.json /etc/hysteria/config.json
-        systemctl restart hysteria-server
-
         echo -e "${GREEN}El usuario $SELECTED_USER ha sido eliminado de forma global.${NC}"
     fi
   fi
@@ -1603,7 +1516,7 @@ extend_user() {
   if [ "$current" = "never" ] || [ -z "$current" ]; then new_exp=$(date -d "+$days days" +%Y-%m-%d)
   else new_exp=$(date -d "$current +$days days" +%Y-%m-%d); fi
   chage -E "$new_exp" "$SELECTED_USER"
-  echo -e "${GREEN}¡Éxito! Cuenta extendida (Aplica para todos los protocolos).\nNueva Expiración: $new_exp${NC}"; pause_return
+  echo -e "${GREEN}¡Éxito! Cuenta extendida.\nNueva Expiración: $new_exp${NC}"; pause_return
 }
 
 draw_item() { printf "${ACC}║${NC}  ${WHITE}[${YELLOW}%s${WHITE}]${NC} %-56s${ACC}║${NC}\n" "$1" "$2"; }
