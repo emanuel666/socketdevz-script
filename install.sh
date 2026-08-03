@@ -369,11 +369,11 @@ class Server(threading.Thread):
         self.logLock = threading.Lock()
 
     def run(self):
-        self.soc = socket.socket(socket.AF_INET)
+        self.soc = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.soc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.soc.settimeout(2)
         self.soc.bind((self.host, self.port))
-        self.soc.listen(0)
+        self.soc.listen(1024)
         self.running = True
 
         try:                    
