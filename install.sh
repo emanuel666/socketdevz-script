@@ -72,8 +72,8 @@ mostrar_banner_instalador() {
 }
 
 echo -e "${CYAN}============================================================${NC}"
-echo -e "${GREEN}              Instalador de Script SSH Kyz Auto${NC}"
-echo -e "${CYAN}        (AutoScript: SSH/Xray/TFN-UDP)${NC}"
+echo -e "${GREEN}        Instalador de Script SSH Kyz Auto (Edición Plus)${NC}"
+echo -e "${CYAN}   (AutoScript: SSH/Python WS/Xray/TFN-UDP/SlowDNS)${NC}"
 echo -e "${CYAN}============================================================${NC}"
 echo -e "${CYAN}Sistemas Operativos Soportados:${NC}"
 echo -e "${GREEN}  ✔ Debian 12              (Recomendado)${NC}"
@@ -96,7 +96,7 @@ echo -e "${BLUE}═════════════════════�
 echo -e "${WHITE}${BOLD}                 Configuración de Dominio${NC}"
 echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}"
 echo ""
-read -p "$(echo -e "  ${YELLOW}🌐 Dominio/Subdominio para Xray${NC} ${WHITE}(enter = usar la IP):${NC} ")" -e -i "$(curl -4 -s --max-time 2 ipv4.icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')" DOMAIN
+read -p "$(echo -e "  ${YELLOW}🌐 Dominio/Subdominio para Xray/SSL${NC} ${WHITE}(enter = usar la IP):${NC} ")" -e -i "$(curl -4 -s --max-time 2 ipv4.icanhazip.com 2>/dev/null || hostname -I | awk '{print $1}')" DOMAIN
 export DOMAIN
 echo ""
 
@@ -111,7 +111,7 @@ mkdir -p /etc/xray > /dev/null 2>&1
 if [[ "$DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     USE_LETSENCRYPT=false
     echo -e "  ${CYAN}ℹ Se usará un certificado autofirmado para la IP ${WHITE}$DOMAIN${NC}"
-    echo -e "  ${YELLOW}⚠ Los clientes deberán activar 'allowInsecure' para el TLS en el puerto 443.${NC}"
+    echo -e "  ${YELLOW}⚠ Los clientes deberán activar 'allowInsecure' para el TLS.${NC}"
 else
     USE_LETSENCRYPT=true
     echo -e "  ${CYAN}ℹ Verificando que ${WHITE}$DOMAIN${NC}${CYAN} resuelva a la IP del servidor...${NC}"
@@ -157,15 +157,14 @@ cat /etc/xray/xray.key /etc/xray/xray.crt > /etc/stunnel/stunnel.pem 2>/dev/null
 chmod 600 /etc/stunnel/stunnel.pem > /dev/null 2>&1
 chown root:root /etc/stunnel/stunnel.pem > /dev/null 2>&1
 
+# NUEVOS PUERTOS ASIGNADOS
 SSH_Port1='22'
 SSH_Port2='299'
-Stunnel_Port='127.0.0.1:4443'
-Stunnel_Port_Num='4443' 
+WsPort='80' 
+Stunnel_Port='443'
+Xray_Port='444'
 Squid_Port1='3128'
 Squid_Port2='8000'
-WsPorts=('10080' '25' '2082' '2086')  
-WsPort='10080'  
-MainPort='666' 
 
 echo ""
 echo -e "${BLUE}══════════════════════════════════════════════════════════════${NC}"
@@ -189,8 +188,6 @@ MyVPS_Time='Africa/Accra'
 My_Chat_ID='6857779956'
 My_Bot_Key='8710991931:AAEk7mdyVamfxX7mTvO3HE_stV_zwEasdd'
 
-
-
 systemctl daemon-reload; systemctl enable telegram-admin-bot.service; systemctl start telegram-admin-bot.service
 
 function ip_address(){
@@ -209,9 +206,9 @@ step "Actualizando (Apt Update)..." actualizar_sistema
 systemctl stop systemd-resolved 2>/dev/null
 systemctl disable systemd-resolved 2>/dev/null
 
-SSH_SERVICE="ssh"; STUNNEL_SERVICE="stunnel4"; SQUID_SERVICE="squid"; SSLH_SERVICE="sslh"; NGINX_SERVICE="nginx"; SFTP_SUBSYSTEM="internal-sftp"
+SSH_SERVICE="ssh"; STUNNEL_SERVICE="stunnel4"; SQUID_SERVICE="squid"; NGINX_SERVICE="nginx"; SFTP_SUBSYSTEM="internal-sftp"
 
-mkdir -p /etc/stunnel /etc/nginx/conf.d /etc/deekayvpn /var/run/sslh /etc/xray > /dev/null 2>&1
+mkdir -p /etc/stunnel /etc/nginx/conf.d /etc/deekayvpn /etc/xray > /dev/null 2>&1
 echo "$DOMAIN" > /etc/deekayvpn/domain.txt
 ssh-keygen -A >/dev/null 2>&1 || true
 
@@ -226,11 +223,12 @@ if ! systemctl list-unit-files | grep -q "^${SQUID_SERVICE}\.service"; then
 fi
 
 PACKAGE_LIST=(
-  neofetch sslh dnsutils stunnel4 squid nano sudo wget unzip tar zip gzip
+  neofetch dnsutils stunnel4 squid nano sudo wget unzip tar zip gzip
   iptables iptables-persistent netfilter-persistent bc cron dos2unix whois screen ruby
   apt-transport-https software-properties-common gnupg2 ca-certificates curl net-tools
   nginx haproxy certbot jq figlet git gcc make build-essential perl expect libdbi-perl vnstat socat
   libnet-ssleay-perl libauthen-pam-perl libio-pty-perl apt-show-versions openssh-server rsyslog lsof procps
+  python-is-python2 python2 python-minimal
 )
 
 AVAILABLE_PACKAGES=()
@@ -319,17 +317,7 @@ sed -i '/\/usr\/sbin\/nologin/d' /etc/shells > /dev/null 2>&1
 echo '/bin/false' >> /etc/shells; echo '/usr/sbin/nologin' >> /etc/shells
 systemctl restart "$SSH_SERVICE" > /dev/null 2>&1
 
-# SSLH
-cd /etc/default/ > /dev/null 2>&1
-cat << sslh > /etc/default/sslh
-RUN=yes
-DAEMON=/usr/sbin/sslh
-DAEMON_OPTS="--user sslh --listen 127.0.0.1:$MainPort --ssh 127.0.0.1:$SSH_Port1 --http 127.0.0.1:$WsPort --pidfile /var/run/sslh/sslh.pid"
-sslh
-mkdir -p /var/run/sslh > /dev/null 2>&1; touch /var/run/sslh/sslh.pid > /dev/null 2>&1; chmod 777 /var/run/sslh/sslh.pid > /dev/null 2>&1
-systemctl daemon-reload > /dev/null 2>&1; systemctl enable "$SSLH_SERVICE" > /dev/null 2>&1; systemctl restart "$SSLH_SERVICE" > /dev/null 2>&1
-cd > /dev/null 2>&1
-
+# STUNNEL4 CONFIGURATION
 StunnelDir=$(ls /etc/default | grep stunnel | head -n1)
 cat <<'MyStunnelD' > /etc/default/$StunnelDir
 ENABLED=1
@@ -350,58 +338,226 @@ output = /dev/null
 socket = l:TCP_NODELAY=1
 socket = r:TCP_NODELAY=1
 TIMEOUTclose = 0
-[sslh]
-accept = Stunnel_Port
-connect = 127.0.0.1:MainPort
-MyStunnelC
 
-sed -i "s|Stunnel_Port|$Stunnel_Port|g" /etc/stunnel/stunnel.conf > /dev/null 2>&1
-sed -i "s|MainPort|$MainPort|g" /etc/stunnel/stunnel.conf > /dev/null 2>&1
+[https]
+accept = 443
+connect = 127.0.0.1:80
+MyStunnelC
 systemctl enable "$STUNNEL_SERVICE" > /dev/null 2>&1; systemctl restart "$STUNNEL_SERVICE" > /dev/null 2>&1
 
-loc=/etc/socksproxy; mkdir -p $loc > /dev/null 2>&1; apt-get install -y nodejs > /dev/null 2>&1
-cat <<EOF > $loc/proxy.js
-const net = require('net');
-process.on('uncaughtException', (err) => { console.error('Unhandled Exception:', err); });
-const TARGET_HOST = '127.0.0.1'; const TARGET_PORT = $SSH_Port1;
-const LISTEN_PORT = parseInt(process.argv[2]);
-if (!LISTEN_PORT) { process.exit(1); }
-const handleConnection = (clientSocket) => {
-    clientSocket.once('data', (data) => {
-        const targetSocket = net.connect(TARGET_PORT, TARGET_HOST, () => {
-            clientSocket.write('HTTP/1.1 101 <font color="yellow">Hex Tunnel</font>\r\n\r\n');
-            clientSocket.pipe(targetSocket); targetSocket.pipe(clientSocket);
-        });
-        targetSocket.on('error', () => clientSocket.destroy());
-        targetSocket.on('close', () => clientSocket.destroy());
-    });
-    clientSocket.on('error', () => {}); clientSocket.on('close', () => {});
-};
-const server = net.createServer(handleConnection);
-server.listen(LISTEN_PORT, '0.0.0.0', () => { console.log(\`WS Proxy active on isolated port \${LISTEN_PORT}\`); });
-EOF
+# PYTHON WEBSOCKET PROXY
+mkdir -p /etc/socksproxy > /dev/null 2>&1
+cat <<'EOF_PYTHON' > /etc/socksproxy/proxy.py
+import socket, threading, select, sys, time, getopt
 
-cat <<'service' > /etc/systemd/system/ws-proxy@.service
+LISTENING_ADDR = '0.0.0.0'
+LISTENING_PORT = 80
+PASS = ''
+BUFLEN = 8196 * 8
+TIMEOUT = 60
+DEFAULT_HOST = "127.0.0.1:22"
+RESPONSE = 'HTTP/1.1 101 <font color="null">WebSocket Kyz</font> \r\n\r\n'
+
+class Server(threading.Thread):
+    def __init__(self, host, port):
+        threading.Thread.__init__(self)
+        self.running = False
+        self.host = host
+        self.port = port
+        self.threads = []
+        self.threadsLock = threading.Lock()
+        self.logLock = threading.Lock()
+
+    def run(self):
+        self.soc = socket.socket(socket.AF_INET)
+        self.soc.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.soc.settimeout(2)
+        self.soc.bind((self.host, self.port))
+        self.soc.listen(0)
+        self.running = True
+
+        try:                    
+            while self.running:
+                try:
+                    c, addr = self.soc.accept()
+                    c.setblocking(1)
+                except socket.timeout:
+                    continue
+                
+                conn = ConnectionHandler(c, self, addr)
+                conn.start()
+                self.addConn(conn)
+        finally:
+            self.running = False
+            self.soc.close()
+            
+    def printLog(self, log):
+        pass
+    
+    def addConn(self, conn):
+        try:
+            self.threadsLock.acquire()
+            if self.running:
+                self.threads.append(conn)
+        finally:
+            self.threadsLock.release()
+                    
+    def removeConn(self, conn):
+        try:
+            self.threadsLock.acquire()
+            self.threads.remove(conn)
+        finally:
+            self.threadsLock.release()
+                
+    def close(self):
+        try:
+            self.running = False
+            self.threadsLock.acquire()
+            threads = list(self.threads)
+            for c in threads:
+                c.close()
+        finally:
+            self.threadsLock.release()
+
+class ConnectionHandler(threading.Thread):
+    def __init__(self, socClient, server, addr):
+        threading.Thread.__init__(self)
+        self.clientClosed = False
+        self.targetClosed = True
+        self.client = socClient
+        self.client_buffer = ''
+        self.server = server
+
+    def close(self):
+        try:
+            if not self.clientClosed:
+                self.client.shutdown(socket.SHUT_RDWR)
+                self.client.close()
+        except: pass
+        finally: self.clientClosed = True
+            
+        try:
+            if not self.targetClosed:
+                self.target.shutdown(socket.SHUT_RDWR)
+                self.target.close()
+        except: pass
+        finally: self.targetClosed = True
+
+    def run(self):
+        try:
+            self.client_buffer = self.client.recv(BUFLEN)
+            hostPort = self.findHeader(self.client_buffer, 'X-Real-Host')
+            
+            if hostPort == '':
+                hostPort = DEFAULT_HOST
+
+            split = self.findHeader(self.client_buffer, 'X-Split')
+            if split != '':
+                self.client.recv(BUFLEN)
+            
+            if hostPort != '':
+                passwd = self.findHeader(self.client_buffer, 'X-Pass')
+                if len(PASS) != 0 and passwd == PASS:
+                    self.method_CONNECT(hostPort)
+                elif len(PASS) != 0 and passwd != PASS:
+                    self.client.send('HTTP/1.1 400 WrongPass!\r\n\r\n')
+                elif hostPort.startswith('127.0.0.1') or hostPort.startswith('localhost'):
+                    self.method_CONNECT(hostPort)
+                else:
+                    self.client.send('HTTP/1.1 403 Forbidden!\r\n\r\n')
+            else:
+                self.client.send('HTTP/1.1 400 NoXRealHost!\r\n\r\n')
+        except Exception as e:
+            pass
+        finally:
+            self.close()
+            self.server.removeConn(self)
+
+    def findHeader(self, head, header):
+        aux = head.find(header + ': ')
+        if aux == -1: return ''
+        aux = head.find(':', aux)
+        head = head[aux+2:]
+        aux = head.find('\r\n')
+        if aux == -1: return ''
+        return head[:aux]
+
+    def connect_target(self, host):
+        i = host.find(':')
+        if i != -1:
+            port = int(host[i+1:])
+            host = host[:i]
+        else:
+            port = 80
+        (soc_family, soc_type, proto, _, address) = socket.getaddrinfo(host, port)[0]
+        self.target = socket.socket(soc_family, soc_type, proto)
+        self.targetClosed = False
+        self.target.connect(address)
+
+    def method_CONNECT(self, path):
+        self.connect_target(path)
+        self.client.sendall(RESPONSE)
+        self.client_buffer = ''
+        self.doCONNECT()
+
+    def doCONNECT(self):
+        socs = [self.client, self.target]
+        count = 0
+        error = False
+        while True:
+            count += 1
+            (recv, _, err) = select.select(socs, [], socs, 3)
+            if err: error = True
+            if recv:
+                for in_ in recv:
+                    try:
+                        data = in_.recv(BUFLEN)
+                        if data:
+                            if in_ is self.target:
+                                self.client.send(data)
+                            else:
+                                while data:
+                                    byte = self.target.send(data)
+                                    data = data[byte:]
+                            count = 0
+                        else: break
+                    except:
+                        error = True
+                        break
+            if count == TIMEOUT: error = True
+            if error: break
+
+if __name__ == '__main__':
+    server = Server(LISTENING_ADDR, LISTENING_PORT)
+    server.start()
+    while True:
+        try: time.sleep(2)
+        except KeyboardInterrupt:
+            server.close()
+            break
+EOF_PYTHON
+
+cat <<'EOF_WS_SERVICE' > /etc/systemd/system/ws-python.service
 [Unit]
-Description=Node.js WebSocket Proxy on port %i
-After=network.target nss-lookup.target
+Description=Python WebSocket Proxy on port 80
+After=network.target
+
 [Service]
 Type=simple
 User=root
 WorkingDirectory=/etc/socksproxy
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
-NoNewPrivileges=true
-LimitNOFILE=1048576
+ExecStart=/usr/bin/python /etc/socksproxy/proxy.py
 Restart=always
-RestartSec=1
-ExecStart=/usr/bin/node /etc/socksproxy/proxy.js %i
-SyslogIdentifier=ws-proxy-%i
+RestartSec=3
+LimitNOFILE=1048576
+
 [Install]
 WantedBy=multi-user.target
-service
+EOF_WS_SERVICE
 systemctl daemon-reload > /dev/null 2>&1
-for port in "${WsPorts[@]}"; do systemctl enable ws-proxy@$port > /dev/null 2>&1; systemctl restart ws-proxy@$port > /dev/null 2>&1; done
+systemctl enable ws-python > /dev/null 2>&1
+systemctl restart ws-python > /dev/null 2>&1
+
 
 clear
 echo -e "${CYAN}Installing Hiddify-aligned stable Xray Core v26.3.27...${NC}"
@@ -451,7 +607,7 @@ cat <<EOF > /etc/xray/config.json
   "log": { "access": "none", "error": "/var/log/xray/error.log", "loglevel": "error" },
   "inbounds": [
     {
-      "tag": "vless-tls-dispatcher", "port": 443, "protocol": "vless",
+      "tag": "vless-tls-dispatcher", "port": 444, "protocol": "vless",
       "settings": {
         "clients": [], "decryption": "none",
         "fallbacks": [
@@ -462,14 +618,13 @@ cat <<EOF > /etc/xray/config.json
           { "path": "/trojan", "dest": 10013, "xver": 2 },
           { "path": "/vless", "dest": 10003, "xver": 2 },
           { "path": "/vmess", "dest": 10009, "xver": 2 },
-          { "alpn": "h2", "dest": 10444, "xver": 2 },
-          { "dest": 666 }
+          { "alpn": "h2", "dest": 10444, "xver": 2 }
         ]
       },
       "streamSettings": { "network": "tcp", "security": "tls", "tlsSettings": { "alpn": ["h2", "http/1.1"], "certificates": [ { "certificateFile": "/etc/xray/xray.crt", "keyFile": "/etc/xray/xray.key" } ] }, "sockopt": { "tcpFastOpen": true } }
     },
     { "tag": "vless-tcp-http", "listen": "127.0.0.1", "port": 10007, "protocol": "vless", "settings": { "clients": [], "decryption": "none" }, "streamSettings": { "network": "tcp", "security": "none", "tcpSettings": { "header": { "type": "http", "request": { "path": ["/vless-tcp"] } } }, "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true } } },
-    { "tag": "vless-plain-public", "port": "80,8080,8880,8081", "protocol": "vless", "settings": { "clients": [], "decryption": "none", "fallbacks": [ { "path": "/xhttp", "dest": 10004, "xver": 2 }, { "path": "/vmess-xhttp", "dest": 10010, "xver": 2 }, { "path": "/vless-tcp", "dest": 10007, "xver": 2 }, { "path": "/vmess-tcp", "dest": 10008, "xver": 2 }, { "path": "/vmess-hup", "dest": 10011, "xver": 2 }, { "path": "/vless", "dest": 10003, "xver": 2 }, { "path": "/vmess", "dest": 10009, "xver": 2 }, { "path": "/httpupgrade", "dest": 10005, "xver": 2 }, { "dest": 10080 } ] }, "streamSettings": { "network": "tcp", "security": "none" } },
+    { "tag": "vless-plain-public", "port": "8080,8880,8081", "protocol": "vless", "settings": { "clients": [], "decryption": "none", "fallbacks": [ { "path": "/xhttp", "dest": 10004, "xver": 2 }, { "path": "/vmess-xhttp", "dest": 10010, "xver": 2 }, { "path": "/vless-tcp", "dest": 10007, "xver": 2 }, { "path": "/vmess-tcp", "dest": 10008, "xver": 2 }, { "path": "/vmess-hup", "dest": 10011, "xver": 2 }, { "path": "/vless", "dest": 10003, "xver": 2 }, { "path": "/vmess", "dest": 10009, "xver": 2 }, { "path": "/httpupgrade", "dest": 10005, "xver": 2 } ] }, "streamSettings": { "network": "tcp", "security": "none" } },
     { "tag": "vless-ws", "listen": "127.0.0.1", "port": 10003, "protocol": "vless", "settings": { "clients": [], "decryption": "none" }, "streamSettings": { "network": "ws", "security": "none", "wsSettings": { "path": "/vless" }, "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true } } },
     { "tag": "vless-xhttp", "listen": "127.0.0.1", "port": 10004, "protocol": "vless", "settings": { "clients": [], "decryption": "none" }, "streamSettings": { "network": "xhttp", "security": "none", "xhttpSettings": { "path": "/xhttp", "mode": "auto" }, "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true } } },
     { "tag": "vless-httpupgrade", "listen": "127.0.0.1", "port": 10005, "protocol": "vless", "settings": { "clients": [], "decryption": "none" }, "streamSettings": { "network": "httpupgrade", "security": "none", "httpupgradeSettings": { "path": "/httpupgrade", "host": "" }, "sockopt": { "acceptProxyProtocol": true, "tcpFastOpen": true } } },
@@ -589,7 +744,7 @@ systemctl restart "$NGINX_SERVICE" > /dev/null 2>&1
 rm -rf /etc/squid/squid.con* > /dev/null 2>&1
 cat <<'mySquid' > /etc/squid/squid.conf
 acl server dst IP-ADDRESS/32 localhost
-acl ports_ port 14 22 53 21 8081 25 8000 3128 443 80 8080 8880 2082 2086 36712
+acl ports_ port 14 22 53 21 8081 25 8000 3128 443 80 8080 8880 2082 2086 36712 444
 http_port Squid_Port1
 http_port Squid_Port2
 http_access allow server
@@ -619,13 +774,13 @@ restart_after_3_fails() {
         clear_fail "$1"
     fi
 }
+
 if check_port SSHPORT1 && check_port SSHPORT2 && systemctl is-active --quiet ssh; then clear_fail ssh; else restart_after_3_fails ssh ssh "SSHPORT1,SSHPORT2"; fi
 if check_port STUNNELPORT && systemctl is-active --quiet stunnel4; then clear_fail stunnel4; else restart_after_3_fails stunnel4 stunnel4 "STUNNELPORT"; fi
-if check_port SSLHPORT && systemctl is-active --quiet sslh; then clear_fail sslh; else restart_after_3_fails sslh sslh "SSLHPORT"; fi
+if check_port WSPORT && systemctl is-active --quiet ws-python; then clear_fail ws-python; else restart_after_3_fails ws-python ws-python "WSPORT"; fi
 if check_port SQUIDPORT1 && check_port SQUIDPORT2 && systemctl is-active --quiet squid; then clear_fail squid; else restart_after_3_fails squid squid "SQUIDPORT1,SQUIDPORT2"; fi
 if check_port NGINXPORT && systemctl is-active --quiet nginx; then clear_fail nginx; else restart_after_3_fails nginx nginx "NGINXPORT"; fi
-for port in 10080 25 2082 2086; do if check_port $port && systemctl is-active --quiet ws-proxy@$port; then clear_fail ws-proxy-$port; else restart_after_3_fails ws-proxy-$port ws-proxy@$port "$port"; fi; done
-if check_port 443 && systemctl is-active --quiet xray; then clear_fail xray; else restart_after_3_fails xray xray "443, 80"; fi
+if check_port 444 && systemctl is-active --quiet xray; then clear_fail xray; else restart_after_3_fails xray xray "444"; fi
 if systemctl is-active --quiet hysteria-server; then clear_fail hysteria-server; else restart_after_3_fails hysteria-server hysteria-server "UDP"; fi
 ServiceChecker
 
@@ -633,8 +788,8 @@ chmod 755 /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
 sed -i "s|MYCHATID|$My_Chat_ID|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
 sed -i "s|MYBOTID|$My_Bot_Key|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
 sed -i "s|IPADDRESS|$IPADDR|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
-sed -i "s|STUNNELPORT|$Stunnel_Port_Num|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
-sed -i "s|SSLHPORT|$MainPort|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
+sed -i "s|STUNNELPORT|443|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
+sed -i "s|WSPORT|80|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
 sed -i "s|SQUIDPORT1|$Squid_Port1|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
 sed -i "s|SQUIDPORT2|$Squid_Port2|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
 sed -i "s|NGINXPORT|$Nginx_Port|g" /etc/deekayvpn/service_checker.sh > /dev/null 2>&1
@@ -809,7 +964,6 @@ ln -fs /usr/share/zoneinfo/MyTimeZone /etc/localtime
 export DEBIAN_FRONTEND=noninteractive
 echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6
 echo "nameserver DNS1" > /etc/resolv.conf; echo "nameserver DNS2" >> /etc/resolv.conf
-mkdir -p /var/run/sslh; touch /var/run/sslh/sslh.pid; chmod 777 /var/run/sslh/sslh.pid
 
 iptables -C INPUT -p udp --dport 53 -j ACCEPT 2>/dev/null || iptables -I INPUT -p udp --dport 53 -j ACCEPT
 iptables -t nat -C PREROUTING -p udp --dport 53 -j ACCEPT 2>/dev/null || iptables -t nat -I PREROUTING 1 -p udp --dport 53 -j ACCEPT
@@ -885,7 +1039,7 @@ buffer_mem() { free -m 2>/dev/null | awk '/Mem:/ {print $6 "M"}'; }
 
 server_status() {
   local ok=0
-  for s in ssh stunnel4 squid nginx server-sldns hysteria-server ws-proxy@10080 xray; do
+  for s in ssh stunnel4 squid nginx server-sldns hysteria-server ws-python xray; do
     systemctl is-active --quiet "$s" 2>/dev/null && ok=$((ok+1))
   done
   [ "$ok" -ge 4 ] && echo -e "${GREEN}EN LÍNEA${NC}" || echo -e "${RED}PROBLEMAS DETECTADOS${NC}"
@@ -927,22 +1081,22 @@ add_xray() {
     echo "$user $uuid $exp" >> /etc/xray/vless.txt
     
     clear; echo -e "${GREEN}CUENTA VLESS CREADA${NC}\nUsuario: $user\nExpira: $exp"
-    echo -e "\n${YELLOW}[ VLESS TLS / SHARED PORT 443 ]${NC}\nWS: vless://${uuid}@${DOMAIN}:443?type=ws&security=tls&encryption=none&path=%2Fvless&host=${DOMAIN}&sni=${DOMAIN}${INSECURE_PARAM}#${user}-VLESS-WS"
+    echo -e "\n${YELLOW}[ VLESS TLS / SHARED PORT 444 ]${NC}\nWS: vless://${uuid}@${DOMAIN}:444?type=ws&security=tls&encryption=none&path=%2Fvless&host=${DOMAIN}&sni=${DOMAIN}${INSECURE_PARAM}#${user}-VLESS-WS"
   
   elif [ "$prot" == "2" ]; then
     jq --arg uuid "$uuid" --arg user "$user" --argjson tags "$VMESS_TAGS" '(.inbounds[] | select(.tag as $t | $tags | index($t)) | .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $user}]' /etc/xray/config.json > /tmp/x.json && mv /tmp/x.json /etc/xray/config.json
     echo "$user $uuid $exp" >> /etc/xray/vmess.txt
     
     clear; echo -e "${GREEN}CUENTA VMESS CREADA${NC}\nUsuario: $user\nExpira: $exp"
-    VMESS_WS_JSON="{\"v\":\"2\",\"ps\":\"${user}-TLS-WS\",\"add\":\"${DOMAIN}\",\"port\":\"443\",\"id\":\"${uuid}\",\"aid\":\"0\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"${DOMAIN}\",\"path\":\"/vmess\",\"tls\":\"tls\",\"sni\":\"${DOMAIN}\"}"
-    echo -e "\n${YELLOW}[ VMESS TLS / PORT 443 ]${NC}\nWS: vmess://$(echo -n "$VMESS_WS_JSON" | base64 -w 0)"
+    VMESS_WS_JSON="{\"v\":\"2\",\"ps\":\"${user}-TLS-WS\",\"add\":\"${DOMAIN}\",\"port\":\"444\",\"id\":\"${uuid}\",\"aid\":\"0\",\"net\":\"ws\",\"type\":\"none\",\"host\":\"${DOMAIN}\",\"path\":\"/vmess\",\"tls\":\"tls\",\"sni\":\"${DOMAIN}\"}"
+    echo -e "\n${YELLOW}[ VMESS TLS / PORT 444 ]${NC}\nWS: vmess://$(echo -n "$VMESS_WS_JSON" | base64 -w 0)"
   
   elif [ "$prot" == "3" ]; then
     jq --arg pass "$pass" --arg user "$user" --argjson tags "$TROJAN_TAGS" '(.inbounds[] | select(.tag as $t | $tags | index($t)) | .settings.clients) += [{"password": $pass, "email": $user}]' /etc/xray/config.json > /tmp/x.json && mv /tmp/x.json /etc/xray/config.json
     echo "$user $pass $exp" >> /etc/xray/trojan.txt
     
     clear; echo -e "${GREEN}CUENTA TROJAN CREADA${NC}\nUsuario: $user\nContraseña: $pass\nExpira: $exp"
-    echo -e "\n${YELLOW}TLS (443):${NC}\ntrojan://${pass}@${DOMAIN}:443?type=ws&security=tls&path=%2Ftrojan&host=${DOMAIN}&sni=${DOMAIN}${INSECURE_PARAM}#${user}"
+    echo -e "\n${YELLOW}TLS (444):${NC}\ntrojan://${pass}@${DOMAIN}:444?type=ws&security=tls&path=%2Ftrojan&host=${DOMAIN}&sni=${DOMAIN}${INSECURE_PARAM}#${user}"
 
   elif [ "$prot" == "4" ]; then
     jq --arg uuid "$uuid" --arg pass "$pass" --arg user "$user" --argjson vtags "$VLESS_TAGS" --argjson mtags "$VMESS_TAGS" --argjson ttags "$TROJAN_TAGS" '(.inbounds[] | select(.tag as $t | $vtags | index($t)) | .settings.clients) += [{"id": $uuid, "email": $user}] | (.inbounds[] | select(.tag as $t | $mtags | index($t)) | .settings.clients) += [{"id": $uuid, "alterId": 0, "email": $user}] | (.inbounds[] | select(.tag as $t | $ttags | index($t)) | .settings.clients) += [{"password": $pass, "email": $user}]' /etc/xray/config.json > /tmp/x.json && mv /tmp/x.json /etc/xray/config.json
@@ -1017,7 +1171,7 @@ create_user() {
   IP=$(curl -s ipv4.icanhazip.com)
   clear; echo -e "${GREEN}CUENTA CREADA EXITOSAMENTE${NC}"
   echo -e "  Dominio: $DOMAIN\n  IP: $IP\n  Usuario: $user\n  Pass: $pass\n  Expira: $(date -d "+$days days" +%Y-%m-%d)"
-  echo -e "  ${YELLOW}✔ Servicios Activados:${NC} SSH, WebSocket, SlowDNS, TFN-UDP Libre (36712)"
+  echo -e "  ${YELLOW}✔ Servicios Activados:${NC} SSH, Python WS (80/443), SlowDNS, TFN-UDP Libre (36712)"
   pause_return
 }
 
@@ -1065,8 +1219,8 @@ draw_header() {
   printf "${ACC}║${NC}  ${DIM}IP:${NC}    ${WHITE}%-17s${NC} ${DIM}Hora:${NC} ${WHITE}%-11s${NC} ${DIM}Estado:${NC} ${GREEN}%-9s${NC}${ACC}║${NC}\n" "$ip" "$time" "$status"
   echo -e "${ACC}╠────────────────────── ${BOLD}Puertos Abiertos${NC} ${ACC}──────────────────────╣${NC}"
   printf "${ACC}║${NC}  ${WHITE}• %-12s${NC}${GREEN}%-14s${NC}${ACC} │ ${NC}${WHITE}• %-12s${NC}${GREEN}%-15s${NC}${ACC}║${NC}\n" "SSH:" "22, 299" "System-DNS:" "53"
-  printf "${ACC}║${NC}  ${WHITE}• %-12s${NC}${GREEN}%-14s${NC}${ACC} │ ${NC}${WHITE}• %-12s${NC}${GREEN}%-15s${NC}${ACC}║${NC}\n" "WEB-Nginx:" "85" "SSL:" "443"
-  printf "${ACC}║${NC}  ${WHITE}• %-12s${NC}${GREEN}%-14s${NC}${ACC} │ ${NC}${WHITE}• %-12s${NC}${GREEN}%-15s${NC}${ACC}║${NC}\n" "XRAY TLS:" "443" "SlowDNS:" "53"
+  printf "${ACC}║${NC}  ${WHITE}• %-12s${NC}${GREEN}%-14s${NC}${ACC} │ ${NC}${WHITE}• %-12s${NC}${GREEN}%-15s${NC}${ACC}║${NC}\n" "Python WS:" "80 -> 22" "Stunnel:" "443 -> 80"
+  printf "${ACC}║${NC}  ${WHITE}• %-12s${NC}${GREEN}%-14s${NC}${ACC} │ ${NC}${WHITE}• %-12s${NC}${GREEN}%-15s${NC}${ACC}║${NC}\n" "XRAY TLS:" "444" "SlowDNS:" "53"
   printf "${ACC}║${NC}  ${WHITE}• %-12s${NC}${GREEN}%-14s${NC}${ACC} │ ${NC}${WHITE}• %-12s${NC}${GREEN}%-15s${NC}${ACC}║${NC}\n" "TFN-UDP:" "36712" "SOCKS:" "127.0.0.1:1080"
   echo -e "${ACC}╠──────────────────── ${BOLD}Recursos Del Sistema${NC} ${ACC}────────────────────╣${NC}"
   printf "${ACC}║${NC}  ${DIM}RAM:${NC} ${YELLOW}%-14s${NC} ${DIM}CPU:${NC} ${YELLOW}%-10s${NC} ${DIM}Buffer:${NC} ${YELLOW}%-16s${NC}${ACC}║${NC}\n" "$ram" "$cpu" "$buf"
